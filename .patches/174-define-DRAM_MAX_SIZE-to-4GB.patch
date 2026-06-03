@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: John Doe <john.doe@somewhere.on.planet>
+Date: Sat, 18 Apr 2026 21:33:48 +0000
+Subject: Patching u-boot sunxi64 files configs/transpeed-8k618-t_defconfig
+ include/configs/sunxi-common.h
+
+Signed-off-by: John Doe <john.doe@somewhere.on.planet>
+---
+ configs/transpeed-8k618-t_defconfig | 1 +
+ include/configs/sunxi-common.h      | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/configs/transpeed-8k618-t_defconfig b/configs/transpeed-8k618-t_defconfig
+index 3b6485421ec..366f5de3a61 100644
+--- a/configs/transpeed-8k618-t_defconfig
++++ b/configs/transpeed-8k618-t_defconfig
+@@ -1,7 +1,8 @@
+ CONFIG_ARM=y
+ CONFIG_ARCH_SUNXI=y
++CONFIG_SUNXI_DRAM_MAX_SIZE=0x100000000
+ CONFIG_DEFAULT_DEVICE_TREE="allwinner/sun50i-h618-transpeed-8k618-t"
+ CONFIG_SPL=y
+ CONFIG_DRAM_SUNXI_DX_ODT=0x03030303
+ CONFIG_DRAM_SUNXI_DX_DRI=0x0e0e0e0e
+ CONFIG_DRAM_SUNXI_CA_DRI=0x1f12
+diff --git a/include/configs/sunxi-common.h b/include/configs/sunxi-common.h
+index b29a25d5617..2cfed3cb44b 100644
+--- a/include/configs/sunxi-common.h
++++ b/include/configs/sunxi-common.h
+@@ -57,11 +57,11 @@
+ #define CFG_SYS_INIT_RAM_ADDR	CONFIG_SUNXI_SRAM_ADDRESS
+ /* FIXME: this may be larger on some SoCs */
+ #define CFG_SYS_INIT_RAM_SIZE	0x8000 /* 32 KiB */
+ 
+ #define PHYS_SDRAM_0			CFG_SYS_SDRAM_BASE
+-#define PHYS_SDRAM_0_SIZE		0x80000000 /* 2 GiB */
++#define PHYS_SDRAM_0_SIZE		0x100000000ULL /* 4 GiB */
+ 
+ /****************************************************************************
+  *           environment variables holding default load addresses           *
+  ****************************************************************************/
+ /*
+-- 
+Created with Armbian build tools https://github.com/armbian/build
