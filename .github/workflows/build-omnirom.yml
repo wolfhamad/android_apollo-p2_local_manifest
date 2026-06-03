@@ -134,5 +134,32 @@ jobs:
           
           cd "$UBOOT_DIR"
           
-          [ -f "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/174-define-DRAM_MAX_SIZE-to-](#)
-
+          [ -f "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" || true
+          [ -f "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" || true
+
+      - name: Setup ccache
+        run: |
+          ccache -M 15G 2>/dev/null || true
+          ccache -z 2>/dev/null || true
+
+      - name: Build OmniROM
+        working-directory: ${{ env.BUILD_DIR }}
+        timeout-minutes: 300
+        run: |
+          export USE_CCACHE=1 CCACHE_COMPRESS=1 CCACHE_DIR=${{ env.CCACHE_DIR }}
+          
+          source build/envsetup.sh
+          lunch omni_${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}
+          
+          mka -j$(nproc --all) bacon 2>&1 | tee build.log
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnirom-12.1-${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}-run${{ github.run_number }}
+          path: |
+            ${{ env.BUILD_DIR }}/out/target/product/${{ github.event.inputs.device }}/*.zip
+            ${{ env.BUILD_DIR }}/build.log
+          retention-days: 30
+          if-no-files-found: warn
