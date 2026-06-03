@@ -27,7 +27,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     timeout-minutes: 480
     
     steps:
@@ -40,16 +40,26 @@ jobs:
           remove-dotnet: 'true'
           remove-haskell: 'true'
 
+      - name: Add 32-bit architecture support
+        run: |
+          echo "📦 Adding 32-bit architecture support..."
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          echo "📦 Installing build dependencies..."
           sudo apt-get install -y \
-            bc bison build-essential curl flex g++-multilib gcc-multilib \
-            git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
-            lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev \
-            libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
-            x11proto-core-dev xsltproc zip zlib1g-dev openjdk-8-jdk python3 \
-            repo libtinfo5 git-lfs ccache wget
+            bc bison build-essential curl flex \
+            g++-multilib gcc-multilib git gnupg gperf imagemagick \
+            lib32z1-dev liblz4-tool libncurses5-dev libssl-dev \
+            libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+            squashfs-tools x11proto-core-dev xsltproc zip zlib1g-dev \
+            openjdk-8-jdk python3 repo git-lfs ccache wget
+          
+          # Try to install optional 32-bit packages
+          sudo apt-get install -y lib32ncurses5-dev libtinfo5 2>/dev/null || echo "⚠️  Some 32-bit packages unavailable (OK for ARM64)"
+          echo "✅ Dependencies installed"
 
       - name: Setup Java
         run: |
@@ -60,6 +70,7 @@ jobs:
         run: |
           mkdir -p ${{ env.BUILD_DIR }}
           mkdir -p ${{ env.CCACHE_DIR }}
+          df -h
 
       - name: Setup repo
         run: |
@@ -72,8 +83,8 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
         run: |
           git config --global user.email "bot@github.com"
-          git config --global user.name "Bot"
-          repo init -u https://github.com/omnirom/android.git -b android-12.1 --depth=1 -q
+          git config --global user.name "GitHub Bot"
+          ~/.bin/repo init -u https://github.com/omnirom/android.git -b android-12.1 --depth=1 -q
 
       - name: Add local manifest
         working-directory: ${{ env.BUILD_DIR }}
@@ -82,16 +93,27 @@ jobs:
             https://raw.githubusercontent.com/wolfhamad/android_apollo-p2_local_manifest/omni-12.1/local_manifest.xml \
             --create-dirs -s
 
-      - name: Sync repos
+      - name: Clean manifest
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          repo sync -j$(nproc --all) --no-clone-bundle -q --force-sync
+          if [ -f .repo/manifests/omni-default.xml ]; then
+            sed -i '/omni-private/d' .repo/manifests/omni-default.xml
+          fi
 
-      - name: Pull LFS
+      - name: Sync repositories
+        working-directory: ${{ env.BUILD_DIR }}
+        timeout-minutes: 120
+        run: |
+          ~/.bin/repo sync -j$(nproc --all) --no-clone-bundle -q --force-sync
+          du -sh ${{ env.BUILD_DIR }}
+
+      - name: Handle LFS files
         working-directory: ${{ env.BUILD_DIR }}
         run: |
           if [ -d "longan" ]; then
-            cd longan && git lfs pull -q && cd ..
+            cd longan
+            git lfs pull -q
+            cd ..
           fi
 
       - name: Copy patches
@@ -100,30 +122,17 @@ jobs:
           mkdir -p patches
           cp ${{ github.workspace }}/.patches/*.patch patches/ 2>/dev/null || true
 
-      - name: Apply patches
+      - name: Apply U-Boot patches
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          UBOOT_DIR=$(find . -name "u-boot-*" -type d | grep -E "kernel|u-boot" | head -1)
-          if [ -z "$UBOOT_DIR" ]; then exit 0; fi
+          UBOOT_DIR=$(find . -type d -name "u-boot-*" 2>/dev/null | head -1)
+          
+          if [ -z "$UBOOT_DIR" ]; then
+            echo "U-Boot directory not found, skipping patches"
+            exit 0
+          fi
+          
           cd "$UBOOT_DIR"
           
-          [ -f "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" || true
-          [ -f "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" || true
-
-      - name: Build ROM
-        working-directory: ${{ env.BUILD_DIR }}
-        run: |
-          export USE_CCACHE=1 CCACHE_COMPRESS=1
-          ccache -M 10G && ccache -z
-          
-          source build/envsetup.sh
-          lunch omni_${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}
-          mka -j$(nproc --all) bacon 2>&1 | tee build.log
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: omnirom-12.1-${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}-run${{ github.run_number }}
-          path: ${{ env.BUILD_DIR }}/out/target/product/${{ github.event.inputs.device }}/
-          retention-days: 30
+          [ -f "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/174-define-DRAM_MAX_SIZE-to-](#)
+
