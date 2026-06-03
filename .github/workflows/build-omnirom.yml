@@ -1,0 +1,129 @@
+name: Build OmniROM 12.1 for H616/H618
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Device to build for'
+        required: true
+        default: 'apollo_p3'
+        type: choice
+        options:
+          - apollo_p2
+          - apollo_p3
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'eng'
+        type: choice
+        options:
+          - eng
+          - userdebug
+          - user
+
+env:
+  BUILD_DIR: /home/runner/android_build
+  CCACHE_DIR: /home/runner/.ccache
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Maximize build space
+        uses: AdityaGarg8/remove-unwanted-software@v4.1
+        with:
+          remove-android: 'true'
+          remove-dotnet: 'true'
+          remove-haskell: 'true'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev \
+            libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+            x11proto-core-dev xsltproc zip zlib1g-dev openjdk-8-jdk python3 \
+            repo libtinfo5 git-lfs ccache wget
+
+      - name: Setup Java
+        run: |
+          sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-8-openjdk-amd64/bin/java 1
+          java -version
+
+      - name: Setup directories
+        run: |
+          mkdir -p ${{ env.BUILD_DIR }}
+          mkdir -p ${{ env.CCACHE_DIR }}
+
+      - name: Setup repo
+        run: |
+          mkdir -p ~/.bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
+          chmod a+x ~/.bin/repo
+          echo "$HOME/.bin" >> $GITHUB_PATH
+
+      - name: Initialize repo
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "Bot"
+          repo init -u https://github.com/omnirom/android.git -b android-12.1 --depth=1 -q
+
+      - name: Add local manifest
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          curl -o .repo/local_manifests/local_manifest.xml -L \
+            https://raw.githubusercontent.com/wolfhamad/android_apollo-p2_local_manifest/omni-12.1/local_manifest.xml \
+            --create-dirs -s
+
+      - name: Sync repos
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          repo sync -j$(nproc --all) --no-clone-bundle -q --force-sync
+
+      - name: Pull LFS
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          if [ -d "longan" ]; then
+            cd longan && git lfs pull -q && cd ..
+          fi
+
+      - name: Copy patches
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          mkdir -p patches
+          cp ${{ github.workspace }}/.patches/*.patch patches/ 2>/dev/null || true
+
+      - name: Apply patches
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          UBOOT_DIR=$(find . -name "u-boot-*" -type d | grep -E "kernel|u-boot" | head -1)
+          if [ -z "$UBOOT_DIR" ]; then exit 0; fi
+          cd "$UBOOT_DIR"
+          
+          [ -f "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/174-define-DRAM_MAX_SIZE-to-4GB.patch" || true
+          [ -f "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" ] && patch -p1 --no-backup-if-mismatch < "../../patches/configs-Transpeed-8K618-T-Add-Transpeed-Secure-Boot.patch" || true
+
+      - name: Build ROM
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          export USE_CCACHE=1 CCACHE_COMPRESS=1
+          ccache -M 10G && ccache -z
+          
+          source build/envsetup.sh
+          lunch omni_${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}
+          mka -j$(nproc --all) bacon 2>&1 | tee build.log
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnirom-12.1-${{ github.event.inputs.device }}-${{ github.event.inputs.build_type }}-run${{ github.run_number }}
+          path: ${{ env.BUILD_DIR }}/out/target/product/${{ github.event.inputs.device }}/
+          retention-days: 30
